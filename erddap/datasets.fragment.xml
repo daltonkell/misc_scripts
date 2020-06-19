@@ -1,0 +1,35 @@
+<dataset type="EDDTableFromNcCFFiles" datasetID="{dataset_id}" active="true">
+    <reloadEveryNMinutes>10</reloadEveryNMinutes>
+    <updateEveryNMillis>10000</updateEveryNMillis>
+    <fileDir>/erddapData/NCSU/LCdata/Data/CICESE/Currents/3hlp</fileDir>
+    <fileNameRegex>{filename}</fileNameRegex>
+    <recursive>true</recursive>
+    <pathRegex>.*</pathRegex>
+    <metadataFrom>last</metadataFrom>
+    <preExtractRegex></preExtractRegex>
+    <postExtractRegex></postExtractRegex>
+    <extractRegex></extractRegex>
+    <columnNameForExtract></columnNameForExtract>
+    <sortFilesBySourceNames></sortFilesBySourceNames>
+    <fileTableInMemory>false</fileTableInMemory>
+    <accessibleViaFiles>false</accessibleViaFiles>
+    <addAttributes>
+
+      <att name="sourceUrl">(local files)</att>
+      <att name="infoUrl">https://gcoos.org</att>
+
+        <!-- tell ERDDAP which variables to serve as profile, trajectory -->
+        <att name="cdm_timeseries_variables">U_cmpt,V_cmpt</att>
+
+        <!-- tell ERDDAP which variables to make subsets for automatically;
+             NOTE - the docs say this is RECOMMENDED, which means "NOT REQUIRED",
+             but it won't load the datasets without specifying at least one. This
+             may be due to ERDDAP trying to use the regular variable names?
+        <att name="subsetVariables">depth</att>
+        -->
+
+    </addAttributes>
+
+    {dataVariables}
+
+</dataset>
