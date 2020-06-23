@@ -113,7 +113,7 @@ def dump_variables_as_erddap_string(vardict: dict) -> str:
         )
     )
 
-def main(datapath: str, fragments_path: str, outname: str) -> None:
+def main(datapath: str, fragments_path: str, outname: str, add_header_footer: bool) -> None:
     """
     Assemble a full datasets.xml file for a given set of NetCDF files
     located at <datapath>. Write the document out as datasets.<outname>.xml
@@ -145,19 +145,24 @@ def main(datapath: str, fragments_path: str, outname: str) -> None:
         # fill the fragment, add to list
         datasets.append(fragment.format(**fields_dict))
 
-    # load generic datasets.xml header fragment
-    with open(pathlib.Path(fragments_path) / "datasets.header.xml", "r") as f:
-        header = f.read()
+    if add_header_footer:
+        # load generic datasets.xml header fragment
+        with open(pathlib.Path(fragments_path) / "datasets.header.xml", "r") as f:
+            header = f.read()
+    
+        # concatenate header, body, footer
+        out_str = "{}\n{}\n</erddapDatasets>".format(header, "\n".join(datasets))
 
-    # concatenate header with body
-    out_str = "{}\n{}\n</erddapDatasets>".format(header, "\n".join(datasets))
+    else: # just make the datasets groups
+        out_str = "\n".join(datasets)
 
     with open(frag_path / f"datasets.{outname}.xml", "w") as f:
         f.write(out_str)
 
 if __name__ == "__main__":
     main(
-        sys.argv[1], # data path
-        sys.argv[2], # path to fragments (datasets.header.xml, datasets.fragment.xml)
-        sys.argv[3]  # string to to format output (datasets.{}.xml), written to fragments path
+        sys.argv[1],            # data path
+        sys.argv[2],            # path to fragments (datasets.header.xml, datasets.fragment.xml)
+        sys.argv[3],            # string to to format output (datasets.{}.xml), written to fragments path
+        bool(int(sys.argv[4]))  # add the header and footer boolean
     )
