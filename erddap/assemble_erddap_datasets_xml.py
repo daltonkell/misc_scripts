@@ -9,6 +9,7 @@ import netCDF4 as nc4
 import typing
 import numpy as np
 import sys
+import yaml
 
 global ERRDAP_NPY_TYPE_MAP
 global ERDDAP_DATAVARIABLE_STR
@@ -113,17 +114,49 @@ def dump_variables_as_erddap_string(vardict: dict) -> str:
         )
     )
 
-def main(datapath: str, fragments_path: str, outname: str, add_header_footer: bool) -> None:
+def get_cdm_variables(ds: nc4.Dataset, dim_names: list) -> str:
+    """
+    Return a comma-separated string of variables if any of their dimensions
+    matches any in `dim_names`.
+    """
+
+    out_vars = []
+    for v in ds.variables.values():
+        for d in v.dimensions:
+            if d in dim_names:
+                out_vars.append(v.name)
+                break
+
+    return ",".join(out_vars)
+
+def create_cdm_variables_tag(cdm_data_type: str, var_str: str) -> str:
+    """
+    Return <att name="cdm_{type}_variables">{list of vars}/<att> tag
+    """
+
+    return f'<att name="cdm_{cdm_data_type}_variables">{var_str}</att>'
+
+def main(config_path) -> None:
     """
     Assemble a full datasets.xml file for a given set of NetCDF files
     located at <datapath>. Write the document out as datasets.<outname>.xml
     to fragments_path.
     """
 
-    frag_path = pathlib.Path(fragments_path)
+    # needed variables from configuration file
+    with open(config_path, "r") as f:
+        cfg = yaml.load(f)
+
+    fragments_path = pathlib.Path(cfg["fragments_path"]) # str
+    datapath = cfg["datapath"] # str
+    erddap_datapath = cfg["erddap_datapath"] # str
+    cdm_data_type = cfg["cdm_data_type"] # str
+    cdm_dims = cfg["cdm_dims"] # list of str
+    outname = cfg["outname"] # str
+    add_header_footer = cfg["add_header_footer"] # bool
 
     # load user-defined <dataset></datasset> block
-    with open(frag_path / "datasets.fragment.xml", "r") as f:
+    with open(fragments_path / "datasets.fragment.xml", "r") as f:
         fragment = f.read()
 
     # iterate through datasets in datapath; for each, fill in the needed
@@ -138,9 +171,13 @@ def main(datapath: str, fragments_path: str, outname: str, add_header_footer: bo
         fields_dict = {
             "dataset_id": _fname.split(".nc")[0],
             "filename": _fname,
-            "dataVariables": dump_variables_as_erddap_string(assemble_erddap_variables_dict(nc))
+            "dataVariables": dump_variables_as_erddap_string(assemble_erddap_variables_dict(nc)),
+            "cdm_variables": create_cdm_variables_tag(
+                cdm_data_type,
+                get_cdm_variables(nc, cdm_dims)
+                ),
+            "erddap_datapath": erddap_datapath
         }
-        
 
         # fill the fragment, add to list
         datasets.append(fragment.format(**fields_dict))
@@ -156,13 +193,10 @@ def main(datapath: str, fragments_path: str, outname: str, add_header_footer: bo
     else: # just make the datasets groups
         out_str = "\n".join(datasets)
 
-    with open(frag_path / f"datasets.{outname}.xml", "w") as f:
+    with open(fragments_path / f"datasets.{outname}.xml", "w") as f:
         f.write(out_str)
 
 if __name__ == "__main__":
     main(
-        sys.argv[1],            # data path
-        sys.argv[2],            # path to fragments (datasets.header.xml, datasets.fragment.xml)
-        sys.argv[3],            # string to to format output (datasets.{}.xml), written to fragments path
-        bool(int(sys.argv[4]))  # add the header and footer boolean
+        sys.argv[1], # config file path
     )

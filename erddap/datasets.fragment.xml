@@ -1,7 +1,7 @@
 <dataset type="EDDTableFromNcCFFiles" datasetID="{dataset_id}" active="true">
     <reloadEveryNMinutes>10</reloadEveryNMinutes>
     <updateEveryNMillis>10000</updateEveryNMillis>
-    <fileDir>/erddapData/NCSU/LCdata/Data/CICESE/Currents/3hlp</fileDir>
+    <fileDir>{erddap_datapath}</fileDir>
     <fileNameRegex>{filename}</fileNameRegex>
     <recursive>true</recursive>
     <pathRegex>.*</pathRegex>
@@ -18,8 +18,8 @@
       <att name="sourceUrl">(local files)</att>
       <att name="infoUrl">https://gcoos.org</att>
 
-        <!-- tell ERDDAP which variables to serve as profile, trajectory -->
-        <att name="cdm_timeseries_variables">U_cmpt,V_cmpt</att>
+        <!-- tell ERDDAP which variables to serve as cdm_data_type -->
+        {cdm_variables}
 
         <!-- tell ERDDAP which variables to make subsets for automatically;
              NOTE - the docs say this is RECOMMENDED, which means "NOT REQUIRED",
