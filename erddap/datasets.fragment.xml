@@ -27,6 +27,10 @@
              may be due to ERDDAP trying to use the regular variable names?
         <att name="subsetVariables">depth</att>
         -->
+        {subsetVariables}
+
+        <!-- if dataset doesn't have an altitude or depth variable, must tell ERDDAP -->
+        <!--<att name="cdm_altitude_proxy"></att>-->
 
     </addAttributes>
 

@@ -8,6 +8,7 @@ import pathlib
 import netCDF4 as nc4
 import typing
 import numpy as np
+import string
 import sys
 import yaml
 
@@ -41,7 +42,7 @@ ERDDAP_DATAVARIABLE_STR = """
   </addAttributes>
 </dataVariable>"""
 
-ERDDAP_ATT_TAG = '    <att name={name} type="{type}">{value}</att>'
+ERDDAP_ATT_TAG = '    <att name="{name}" type="{type}">{value}</att>'
 
 def create_att_tags(atts: typing.Dict[str, str]):
     return "\n".join(
@@ -80,7 +81,7 @@ def get_attr_name_type_val_for_erddap(name: str, attr: typing.Any) -> typing.Dic
 def load_var_attr_dict(nc_var: nc4.Variable) -> typing.Dict[str, str]:
     return {k: nc_var.getncattr(k) for k in nc_var.ncattrs()}
 
-def assemble_erddap_variables_dict(data: nc4.Dataset) -> dict:
+def assemble_erddap_variables_dict(data: nc4.Dataset, user_config_variable_attrs: dict = dict()) -> dict:
     """
     Given a NetCDF4.Dataset object, return a dict of each
     variable and its corresponding ERDDAP type. Include basic
@@ -90,10 +91,18 @@ def assemble_erddap_variables_dict(data: nc4.Dataset) -> dict:
     out = dict()
 
     for varname, var in data.variables.items():
+        vatts = user_config_variable_attrs.get(varname, dict()) # default to empty dict
         out[varname] = dict(
+
+            # get appropriate ERDDAP data type
             dataType=ERDDAP_NPY_TYPE_MAP.get(var.dtype.__str__(), "float64"),
+
+            # sourceName is name of variable in source data
             sourceName=varname,
-            destinationName=varname,
+
+            # if user has provided destinationName, use it, otherwise default to sourceName
+            destinationName=vatts.get("destinationName", varname),
+
             attributes=load_var_attr_dict(var)
         )
 
@@ -114,7 +123,7 @@ def dump_variables_as_erddap_string(vardict: dict) -> str:
         )
     )
 
-def get_cdm_variables(ds: nc4.Dataset, dim_names: list) -> str:
+def get_cdm_variables(ds: nc4.Dataset, dim_names: list, vars_attrs_dict: dict) -> str:
     """
     Return a comma-separated string of variables if any of their dimensions
     matches any in `dim_names`.
@@ -124,7 +133,7 @@ def get_cdm_variables(ds: nc4.Dataset, dim_names: list) -> str:
     for v in ds.variables.values():
         for d in v.dimensions:
             if d in dim_names:
-                out_vars.append(v.name)
+                out_vars.append(vars_attrs_dict.get(v.name, dict()).get("destinationName", v.name))
                 break
 
     return ",".join(out_vars)
@@ -135,6 +144,39 @@ def create_cdm_variables_tag(cdm_data_type: str, var_str: str) -> str:
     """
 
     return f'<att name="cdm_{cdm_data_type}_variables">{var_str}</att>'
+
+def create_cdm_variables_dict(
+    cdm_data_variable_types: typing.Dict[str, list],
+    nc: nc4.Dataset,
+    user_config_var_attrs: dict) -> dict:
+    """
+    Given a dict of cdm_data_types, get the appropriate variables for each cdm_data_type
+    and return them in a dictionary.
+
+    Parameters
+    ----------
+    cdm_data_types: {type: [dimensions], ... }
+    nc: nc4.Dataset
+
+    Returns
+    -------
+    {cdm_type: variable_str, ...}
+    """
+
+    out = dict()
+    for cdm_data_type, cdm_dims in cdm_data_variable_types.items():
+        out[cdm_data_type] = get_cdm_variables(nc, cdm_dims, user_config_var_attrs)
+    return out
+
+def create_cdm_variables_tags(cdm_data_variable_type_vars: typing.Dict[str, str]) -> str:
+    out = []
+    for cdm_data_type, cdm_vars in cdm_data_variable_type_vars.items():
+        out.append(create_cdm_variables_tag(cdm_data_type, cdm_vars))
+
+    return "\n".join(out)
+
+def create_subset_variables_tag(dim_var_dict: dict):
+    return "<att name=\"subsetVariables\">{}</att>".format("".join(*dim_var_dict.values()))
 
 def main(config_path) -> None:
     """
@@ -147,13 +189,14 @@ def main(config_path) -> None:
     with open(config_path, "r") as f:
         cfg = yaml.load(f)
 
-    fragments_path = pathlib.Path(cfg["fragments_path"]) # str
-    datapath = cfg["datapath"] # str
-    erddap_datapath = cfg["erddap_datapath"] # str
-    cdm_data_type = cfg["cdm_data_type"] # str
-    cdm_dims = cfg["cdm_dims"] # list of str
-    outname = cfg["outname"] # str
-    add_header_footer = cfg["add_header_footer"] # bool
+    fragments_path = pathlib.Path(cfg["fragments_path"])              # str
+    datapath = cfg["datapath"]                                        # str
+    erddap_datapath = cfg["erddap_datapath"]                          # str
+    cdm_data_type_dims = cfg["cdm_data_type_dims"]                    # dict[str, list[str]]
+    outname = cfg["outname"]                                          # str
+    add_header_footer = cfg["add_header_footer"]                      # bool
+    user_config_variable_attrs = cfg["user_config_variable_attrs"]    # dict
+    use_cdm_vars_as_subset = cfg.get("use_cdm_vars_as_subset", False) # bool
 
     # load user-defined <dataset></datasset> block
     with open(fragments_path / "datasets.fragment.xml", "r") as f:
@@ -168,14 +211,17 @@ def main(config_path) -> None:
 
         _fname = ncfile.name
         nc = nc4.Dataset(ncfile)
+        cdm_types_vars_dict = create_cdm_variables_dict(cdm_data_type_dims, nc, user_config_variable_attrs)
         fields_dict = {
             "dataset_id": _fname.split(".nc")[0],
             "filename": _fname,
-            "dataVariables": dump_variables_as_erddap_string(assemble_erddap_variables_dict(nc)),
-            "cdm_variables": create_cdm_variables_tag(
-                cdm_data_type,
-                get_cdm_variables(nc, cdm_dims)
+            "dataVariables": dump_variables_as_erddap_string(
+                assemble_erddap_variables_dict(
+                    nc, user_config_variable_attrs
+                    )
                 ),
+            "cdm_variables": create_cdm_variables_tags(cdm_types_vars_dict),
+            "subsetVariables": create_subset_variables_tag(cdm_types_vars_dict) if use_cdm_vars_as_subset else "",
             "erddap_datapath": erddap_datapath
         }
 
